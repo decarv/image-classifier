@@ -16,11 +16,10 @@ MAX_IMAGES = 100
 IMAGE_FILENAME = "{}_{}.png"
 
 
-class Class:
-    def __init__(self, name, ui_name, color, index):
+class Item:
+    def __init__(self, name, ui_name, index):
         self.name = name
         self.ui_name = ui_name
-        self.color = color
         self.index = index
         self.path = os.path.join(DATASET_DIR, name)
         
@@ -29,18 +28,17 @@ class Class:
 
 
 CLASSES = {
-    "fork": Class("fork", "Garfo", "red", 1),
-    "knife": Class("knife", "Faca", "blue", 2),
-    "spoon": Class("spoon", "Colher", "green", 3),
-    "cup": Class("cup", "Copo", "yellow", 4),
-    "tool": Class("tool", "Ferramenta", "purple", 5),
+    "fork": Item("fork", "Garfo", 1),
+    "knife": Item("knife", "Faca", 2),
+    "spoon": Item("spoon", "Colher", 3),
+    "cup": Item("cup", "Copo", 4),
+    "tool": Item("tool", "Ferramenta", 5),
 }
 
 BACKGROUNDS = ["Branco", "Preto", "Colorido"]
 
 def _take_pic(sender):
     class_name = list(CLASSES.keys())[sc_classes.selected_segment]
-    print(">>>>>>>",class_name)
     cls = CLASSES.get(class_name)
     if cls is None:
         raise ValueError("Invalid class name")
