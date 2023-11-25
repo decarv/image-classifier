@@ -39,12 +39,14 @@ CLASSES = {
 BACKGROUNDS = ["Branco", "Preto", "Colorido"]
 
 def _take_pic(sender):
-    class_name = sc_classes.selected_segment()
+    class_name = list(CLASSES.keys())[sc_classes.selected_segment]
+    print(">>>>>>>",class_name)
     cls = CLASSES.get(class_name)
     if cls is None:
         raise ValueError("Invalid class name")
-    obj_id = hash(str(datetime.datetime.now()).encode())
-    filename = IMAGE_FILENAME.format(cls.name, obj_id)
+    obj_id = str(abs(hash(str(datetime.datetime.now()).encode())))
+    filename = os.path.join(cls.path, IMAGE_FILENAME.format(cls.name, obj_id))
+    print(filename)
     if filename is None:
         raise ValueError("Invalid filename")
 
@@ -62,7 +64,7 @@ def _take_pic(sender):
         filename,
         obj_id,
         cls.ui_name,
-        bg_color=sc_bg_color.selected_segment(),
+        bg_color=BACKGROUNDS[sc_bg_color.selected_segment],
     )
     update_summary(cls.ui_name, len(image_byte_array), width, height)
 
@@ -91,18 +93,18 @@ def update_summary(cls_name, image_size, width, height):
     except FileNotFoundError:
         pass
 
-    summary_data["Número de Classes"] = int(summary_data.get("Número de Classes", 0))
-    summary_data["Número de Imagens"] = int(summary_data.get("Número de Imagens", 0))
-    summary_data["Tamanho da Base"] = float(summary_data.get("Tamanho da Base (MB)", 0.0))
-    summary_data["Resolução das Imagens"] = f"({width}, {height})"
+    summary_data["Numero de Classes"] = int(summary_data.get("Numero de Classes", 0))
+    summary_data["Numero de Imagens"] = int(summary_data.get("Numero de Imagens", 0))
+    summary_data["Tamanho da Base"] = float(summary_data.get("Tamanho da Base", 0.0))
+    summary_data["Resolucao das Imagens"] = f"({width}, {height})"
 
     if summary_data.get(cls_name, None) is None:
         summary_data[cls_name] = 0
-        summary_data["Número de Classes"] = summary_data["Número de Classes"] + 1
-
-    summary_data[cls_name] += 1
-    summary_data["Número de Imagens"] += 1
-    summary_data["Tamanho da Base"] = f"{summary_data['Tamanho da Base'] + image_size / 1e6:.2f}"
+        summary_data["Numero de Classes"] = int(summary_data["Numero de Classes"]) + 1
+    print(summary_data['Tamanho da Base'])
+    summary_data[cls_name] = int(summary_data[cls_name]) + 1
+    summary_data["Numero de Imagens"] = int(summary_data['Numero de Imagens']) + 1
+    summary_data["Tamanho da Base"] = f"{float(summary_data['Tamanho da Base']) + image_size / 1e6:.2f}"
 
     with open(SUMMARY_FILEPATH, 'w', newline='') as file:
         writer = csv.writer(file)
@@ -116,15 +118,15 @@ view.background_color = ui.COLOR_SYSTEM_BACKGROUND
 
 take_pic_button = ui.Button(title="Tirar foto")
 take_pic_button.size = (200, 100)
-take_pic_button.center = (view.width / 2 + 50, view.height / 2)
+take_pic_button.center = (view.width / 2 + 25, view.height / 2)
 
-sc_classes = ui.SegmentedControl([str(cls) for cls in CLASSES])
-sc_classes.size = (300, 50)
-sc_classes.center = (view.width / 2 + 50, view.height / 2 + 200)
+sc_classes = ui.SegmentedControl([str(cls) for cls in CLASSES.values()])
+sc_classes.size = (400, 50)
+sc_classes.center = (view.width / 2 + 25, view.height / 2 + 200)
 
 sc_bg_color = ui.SegmentedControl(BACKGROUNDS)
-sc_classes.size = (300, 50)
-sc_classes.center = (view.width / 2 + 50, view.height / 2 + 400)
+sc_bg_color.size = (300, 50)
+sc_bg_color.center = (view.width / 2 + 25, view.height / 2 + 300)
 #
 # switch_daytime = ui.Switch(["Dia", "Noite"])
 # switch_daytime.size = (100, 50)
