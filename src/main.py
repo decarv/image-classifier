@@ -27,7 +27,7 @@ class Item:
         return self.ui_name
 
 
-CLASSES = {
+ITEMS = {
     "fork": Item("fork", "Garfo", 1),
     "knife": Item("knife", "Faca", 2),
     "spoon": Item("spoon", "Colher", 3),
@@ -38,8 +38,8 @@ CLASSES = {
 BACKGROUNDS = ["Branco", "Preto", "Colorido"]
 
 def _take_pic(sender):
-    class_name = list(CLASSES.keys())[sc_classes.selected_segment]
-    cls = CLASSES.get(class_name)
+    class_name = list(ITEMS.keys())[sc_classes.selected_segment]
+    cls = ITEMS.get(class_name)
     if cls is None:
         raise ValueError("Invalid class name")
     obj_id = str(abs(hash(str(datetime.datetime.now()).encode())))
@@ -118,7 +118,7 @@ take_pic_button = ui.Button(title="Tirar foto")
 take_pic_button.size = (200, 100)
 take_pic_button.center = (view.width / 2 + 25, view.height / 2)
 
-sc_classes = ui.SegmentedControl([str(cls) for cls in CLASSES.values()])
+sc_classes = ui.SegmentedControl([str(cls) for cls in ITEMS.values()])
 sc_classes.size = (400, 50)
 sc_classes.center = (view.width / 2 + 25, view.height / 2 + 200)
 

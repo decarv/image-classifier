@@ -52,7 +52,7 @@ os diretórios manualmente, conforme a estrutura a seguir:
 A implementação das classes é feita no arquivo `src/main.py`, onde é possível alterar o nome das classes e as cores de fundo.
 
 ```python
-CLASSES = {
+ITEMS = {
     "fork": Item("fork", "Garfo", 1),
     "knife": Item("knife", "Faca", 2),
     "spoon": Item("spoon", "Colher", 3),
