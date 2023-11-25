@@ -20,12 +20,12 @@ conforme demonstrado pelo exemplo a seguir:
 
 ### Metadados
 
-Os metadados são armazenados em arquivo .csv e tem os seguintes dados:
+O arquivo de metadados é armazenado em arquivo `metadados.csv` e tem os seguintes dados:
 nome do arquivo, ID do objeto, nome da classe e cor de fundo.
 
 ### Sumário
 
-O sumário é armazenado em arquivo .csv e tem os seguintes dados:
+O arquivo de sumário é armazenado em arquivo `sumario.csv` e tem os seguintes dados:
 número de classes, número de imagens, tamanho do dataset em MB, largura e altura das imagens, número de imagens para cada
 uma das classes.
 
