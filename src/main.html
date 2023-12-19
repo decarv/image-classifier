@@ -1,0 +1,463 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Button Interface</title>
+    <style>
+        body {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            margin: 0;
+            background-color: #000000; /* Soft white background */
+        }
+        .round-button {
+            background-color: #FF0000; /* Red */
+            border: 5px solid #FFFFFF; /* White border */
+            color: #FFFFFF; /* White text */
+            padding: 30px; /* Increased padding for a larger button */
+            border-radius: 50%;
+            font-size: 18px;
+            font-weight: bold; /* Make text bold */
+            text-align: center;
+            display: inline-block;
+            width: 150px; /* Increased width for a larger button */
+            height: 150px; /* Increased height for a larger button */
+            line-height: 90px; /* Adjusted line height for vertical alignment */
+            position: relative; /* To center the text vertically */
+        }
+        .plus-button {
+            background-color: #007BFF; /* Darker Blue */
+            border: none;
+            color: white;
+            padding: 10px 20px;
+            text-align: center;
+            text-decoration: none;
+            display: inline-block;
+            font-size: 16px;
+            font-weight: bold; /* Make text bold */
+            border-radius: 20px;
+            margin: 4px 2px;
+            cursor: pointer;
+            position: absolute;
+            top: 20px;
+            right: 20px; /* Positioned at the top right */
+        }
+        .plus-button span {
+            font-size: 24px; /* Bigger font size for the plus sign */
+        }
+    </style>
+</head>
+<body>
+    <div id="main_page">
+        <button id="go_to_add_data_page_btn" class="plus-button"><span>+</span> Adicionar</button>
+        <button id="classify_btn" class="round-button">Classificar</button>
+    </div>
+
+    <div id="add_page" style="display: none;">
+        <button id="fenda-btn" data-class="chave_de_fenda" class="class-button">Chave de Fenda</button>
+        <button id="alicate-btn" data-class="alicate" class="class-button">Alicate</button>
+        <button id="inglesa-btn" data-class="chave_inglesa" class="class-button">Chave Inglesa</button>
+        <button id="hexagonal-btn" data-class="chave_hexagonal" class="class-button">Chave Hexagonal</button>
+        <button id="martelo-btn" data-class="martelo" class="class-button">Martelo</button>
+    </div>
+
+    <script type="text/python">
+        import os
+        import csv
+        from typing import Callable
+        import cv2
+        import numpy as np
+        import pandas as pd
+        import matplotlib.pyplot as plt
+        from PIL import Image, ImageEnhance
+        from itertools import product
+        import joblib
+        import htmpy
+        import llib
+
+        ##################################################################
+        #                       GLOBAL VARIABLES                         #
+        ##################################################################
+        PROJECT_DIR = "/private/var/mobile/Library/Mobile Documents/com~apple~CloudDocs/image-classifier/image-classifier"
+        SRC_DIR = os.path.join(PROJECT_DIR, "src")
+        DATASET_DIR = os.path.join(PROJECT_DIR, "dataset")
+        AUGMENTED_DATASET_DIR = os.path.join(PROJECT_DIR, "augmented_dataset")
+        NORMALIZED_DATASET_DIR = os.path.join(PROJECT_DIR, "normalized_dataset")
+        SEGMENTED_DATASET_DIR = os.path.join(PROJECT_DIR, "segmented_dataset")
+
+        METADATA_FILEPATH = os.path.join(DATASET_DIR, "metadados.csv")
+        SUMMARY_FILEPATH = os.path.join(DATASET_DIR, "sumario.csv")
+        CLASSIFIER_FILEPATH = os.path.join(PROJECT_DIR, "classifier.pkl")
+
+        MAX_IMAGES = 100
+        IMAGE_FILENAME = "{}_{}.png"
+
+        BACKGROUNDS = ["Branco"]
+
+
+        ##################################################################
+        #                              LIB                               #
+        ##################################################################
+
+
+        class Item:
+            def __init__(self, name, ui_name, index):
+                self.name = name
+                self.ui_name = ui_name
+                self.index = index
+                self.path = os.path.join(DATASET_DIR, name)
+
+            def __repr__(self):
+                return self.ui_name
+
+
+        class Collection:
+            def __init__(self):
+                self.items = {}
+                self.count = 0
+
+            def add_item(self, name, ui_name):
+                self.count += 1
+                self.items[name] = Item(name, ui_name, self.count)
+
+            def keys(self):
+                return list(self.items.keys())
+
+            def get(self, cls_name):
+                return self.items.get(cls_name)
+
+            def ui_names(self):
+                return [item.ui_name for item in self.items.values()]
+
+
+        class Classifier:
+            def __init__(self):
+                self.segmentation_params = (9, 75, 50, 3, 2)
+                self.classifier = joblib.load("classifier.pkl")
+
+            def detect(self, image, **kwargs):
+                image = rgb2gray(image)
+                transformed_images = [log_transform(image), exp_transform(image), mean_filter(image), gray_gradient(image)]
+                normalized_images = [histogram_equalization(im) for im in transformed_images]
+                segmented_images = [create_segmentation_mask(im, *self.segmentation_params) for im in normalized_images]
+                features = pd.DataFrame([extract_features(im) for im in segmented_images if im is not None])
+
+                if not features.empty:
+                    predictions = self.classifier.predict(features)
+                    best_score_index = np.argmax(predictions)
+                    best_image = segmented_images[best_score_index]
+
+                    bounding_box_image, (x, y, w, h) = draw_bounding_box(best_image)
+
+                    class_name = predictions[best_score_index]
+                    cv2.putText(bounding_box_image, class_name, (x, y - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.9, (0, 255, 0), 2)
+
+                    return bounding_box_image, (x, y, w, h)
+                else:
+                    return image, None
+
+
+        def update_summary(cls_name, image_size, width, height):
+            """
+            """
+            summary_data = {}
+            try:
+                with open(SUMMARY_FILEPATH, 'r') as file:
+                    reader = csv.reader(file)
+                    for row in reader:
+                        if row:
+                            summary_data[row[0]] = row[1]
+            except FileNotFoundError:
+                pass
+
+            summary_data["Numero de Classes"] = int(summary_data.get("Numero de Classes", 0))
+            summary_data["Numero de Imagens"] = int(summary_data.get("Numero de Imagens", 0))
+            summary_data["Tamanho da Base"] = float(summary_data.get("Tamanho da Base", 0.0))
+            summary_data["Resolucao das Imagens"] = f"({width}, {height})"
+
+            if summary_data.get(cls_name, None) is None:
+                summary_data[cls_name] = 0
+                summary_data["Numero de Classes"] = int(summary_data["Numero de Classes"]) + 1
+            print(summary_data['Tamanho da Base'])
+            summary_data[cls_name] = int(summary_data[cls_name]) + 1
+            summary_data["Numero de Imagens"] = int(summary_data['Numero de Imagens']) + 1
+            summary_data["Tamanho da Base"] = f"{float(summary_data['Tamanho da Base']) + image_size / 1e6:.2f}"
+
+            with open(SUMMARY_FILEPATH, 'w', newline='') as file:
+                writer = csv.writer(file)
+                for lin, val in summary_data.items():
+                    writer.writerow([lin, val])
+
+
+        def get_id(image):
+            """
+            Retorna o id do objeto a partir da imagem.
+            """
+            return str(abs(hash(image.tobytes())))
+
+
+        def update_metadata(filename, obj_id, name, bg_color):
+            """
+            Carrega o arquivo de metadados e adiciona uma nova linha com o nome do arquivo e a classe.
+
+            colunas metadados.csv:
+                filename, obj_id, name, bg_color
+            """
+            with open(METADATA_FILEPATH, 'a', newline='') as file:
+                writer = csv.writer(file)
+                writer.writerow([filename, obj_id, name, bg_color])
+
+        def iaa_transform(transform_function: Callable):
+            def lambda_transformation(images, random_state, parents, hooks):
+                return [transform_function(image) for image in images]
+
+            return iaa.Lambda(func_images=lambda_transformation)
+
+        def rgb2gray(image):
+            image = cv2.cvtColor(image, cv2.COLOR_RGB2BGR)
+            return cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+
+
+        def gray_gradient(image):
+            h, w = image.shape[:2]
+            gradient = np.linspace(0, 255, w, dtype=np.uint8)
+            gradient = np.tile(gradient, (h, 1))
+            return cv2.addWeighted(image, 0.5, gradient, 0.5, 0)
+
+
+        def log_transform(image):
+            c = 255 / np.log(1 + np.max(image))
+            log_transformed = c * np.log(1 + image)
+            log_transformed = np.array(log_transformed, dtype=np.uint8)
+            return log_transformed
+
+
+        def exp_transform(image):
+            c = 255 / (np.exp(1) - 1)
+            exp_transformed = c * (np.exp(image / 255) - 1)
+            exp_transformed = np.array(exp_transformed, dtype=np.uint8)
+            return exp_transformed
+
+
+        def mean_filter(image):
+            kernel = np.ones((5, 5), np.float32) / 25
+            img = cv2.filter2D(image, -1, kernel)
+            return cv2.blur(img, (5, 5))
+
+
+        def draw_bounding_box(image):
+            # Threshold the image to get the white region
+            _, thresh = cv2.threshold(image, 250, 255, cv2.THRESH_BINARY)
+
+            # Find contours
+            contours, _ = cv2.findContours(thresh, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+
+            # Assume the largest contour is the region of interest
+            largest_contour = max(contours, key=cv2.contourArea)
+
+            # Draw the bounding box around the largest contour in red color (RGB format for display)
+            x, y, w, h = cv2.boundingRect(largest_contour)
+            color_image = cv2.cvtColor(image, cv2.COLOR_GRAY2RGB)  # Convert to RGB
+            bounding_box_image = cv2.rectangle(color_image, (x - 2, y - 2), (x + w + 2, y + h + 2), (255, 0, 0), 2)
+
+            # Extract the region within the bounding box
+            extracted_region = image[y - 2:y + h + 2, x - 2:x + w + 2]
+
+            return bounding_box_image, extracted_region
+
+
+        def histogram_equalization(image):
+            if image.ndim == 2:
+                clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
+                return clahe.apply(image)
+            else:
+                raise ValueError("Image must be grayscale")
+
+
+        def create_segmentation_mask(image, filter_diameter, sigma_color, sigma_space, kernel_size, iterations):
+            if len(image.shape) == 3 and image.shape[2] == 3:
+                raise ValueError("Expected a grayscale image")
+            if len(image.shape) == 3 and image.shape[2] == 1:
+                image = image.reshape(1290, -1)
+
+            # Use a bilateral filter for noise reduction with adjustable parameters
+            blur = cv2.bilateralFilter(image, filter_diameter, sigma_color, sigma_space)
+
+            # Apply Otsu's thresholding
+            _, binary_mask = cv2.threshold(blur, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
+
+            # Apply Canny edge detection to help in finding contours
+            edges = cv2.Canny(blur, 100, 200)
+
+            # Morphological opening to remove small objects with adjustable parameters
+            kernel = np.ones((kernel_size, kernel_size), np.uint8)
+            opening = cv2.morphologyEx(binary_mask, cv2.MORPH_OPEN, kernel, iterations=iterations)
+            # Find the largest contour
+            contours, _ = cv2.findContours(opening, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+            if not contours:
+                return np.zeros_like(binary_mask)
+            largest_contour = max(contours, key=cv2.contourArea)
+            filled_mask = np.zeros_like(binary_mask)
+            cv2.drawContours(filled_mask, [largest_contour], -1, 255, thickness=cv2.FILLED)
+
+            return filled_mask
+
+
+        def extract_features(binary_image):
+            # Ensure the input image is binary
+            assert isinstance(binary_image, np.ndarray)
+
+            _, thresh = cv2.threshold(binary_image, 128, 255, cv2.THRESH_BINARY)
+
+            # Find contours and properties
+            contours, _ = cv2.findContours(thresh, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+            if not contours:
+                Image.fromarray(binary_image).show()
+                return NoneImage.fromarray(binary_image).show()
+            largest_contour = max(contours, key=cv2.contourArea)
+
+            # Calculate area
+            area = cv2.contourArea(largest_contour)
+
+            # Calculate perimeter
+            perimeter = cv2.arcLength(largest_contour, True)
+
+            # Calculate the bounding rectangle
+            x, y, w, h = cv2.boundingRect(largest_contour)
+            aspect_ratio = float(w) / h
+            rect_area = w * h
+            extent = float(area) / rect_area
+
+            # Create a convex hull for the largest contour
+            try:
+                hull = cv2.convexHull(largest_contour)
+                hull_area = cv2.contourArea(hull)
+                solidity = float(area) / hull_area
+            except ZeroDivisionError:
+                solidity = 0
+
+            # Equivalent Diameter
+            equivalent_diameter = np.sqrt(4 * area / np.pi)
+
+            # Orientation, Eccentricity, and other moments-based properties
+            moments = cv2.moments(largest_contour)
+            if moments['mu20'] + moments['mu02'] != 0:
+                eccentricity = np.sqrt(2 * (moments['mu20'] - moments['mu02']) ** 2 + 4 * moments['mu11'] ** 2) / (
+                            moments['mu20'] + moments['mu02'])
+                orientation = 0.5 * np.arctan((2 * moments['mu11']) / (moments['mu20'] - moments['mu02']))
+            else:
+                eccentricity = 0
+                orientation = 0
+
+            # Compactness
+            if area != 0:
+                compactness = (perimeter ** 2) / area
+            else:
+                compactness = 0
+
+            features = {
+                "Area": area,
+                "Perimeter": perimeter,
+                "Aspect Ratio": aspect_ratio,
+                "Extent": extent,
+                "Solidity": solidity,
+                "Equivalent Diameter": equivalent_diameter,
+                "Orientation": orientation,
+                "Eccentricity": eccentricity,
+                "Compactness": compactness
+            }
+
+            return features
+
+
+        collection = Collection()
+        collection.add_item("chave_de_fenda", "A")
+        collection.add_item("alicate", "B")
+        collection.add_item("chave_inglesa", "C")
+        collection.add_item("chave_hexagonal", "D")
+        collection.add_item("martelo", "E")
+
+        class_to_add = None
+
+        def handle_class_to_add_click(event):
+            global class_to_add
+            class_to_add = event.target.textContent
+
+        add_page_div = htmpy.window.document.getElementsById("add_page")
+        add_page_div.addEventListener("click", handle_click)
+
+
+        def handle_go_to_add_data_page():
+            htmpy.window.document.getElementById("main_page").style.display = "none"
+            htmpy.window.document.getElementById("add_page").style.display = "block"
+
+        go_to_add_data_page_btn = htmpy.window.document.getElementById("go_to_add_data_page_btn")
+        go_to_add_data_page_btn.addEventListener("click", handle_go_to_add_data_page)
+
+
+        def run_classifier():
+            classifier = Classifier()
+            device = 0
+            try:
+                device = int(sys.argv[1])  # 0 for back camera
+            except IndexError:
+                pass
+            cap = cv2.VideoCapture(device)
+
+            while cap.isOpened():
+                ret, frame = cap.read()
+                if not ret:
+                    continue
+                frame = cv2.autorotate(frame, device)
+                frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+                _, objects = classifier.detect(frame)
+                if objects is not None:
+                    for (x, y, w, h) in objects:
+                        cv2.rectangle(frame, (x, y), (x + w, y + h), (0, 255, 0), 2)
+
+                cv2.imshow('frame', frame)
+
+        classify_btn = htmpy.window.document.getElementById("classify_btn")
+        classify_btn.addEventListener("click", run_classifier)
+
+        def take_pic():
+            class_name = class_to_add
+            cls = collection.get(class_name)
+            if cls is None:
+                raise ValueError("Invalid class name")
+
+            image = photos.take_photo()
+
+            obj_id = get_id(image)
+            filename = os.path.join(cls.path, IMAGE_FILENAME.format(cls.name, obj_id))
+            print(filename)
+            if filename is None:
+                raise ValueError("Invalid filename")
+
+            image_byte_array = io.BytesIO()
+            image.save(image_byte_array, format='PNG')
+            image_byte_array = image_byte_array.getvalue()
+            with open(filename, 'wb') as f:
+                f.write(image_byte_array)
+
+            width, height = image.size
+
+            update_metadata(
+                filename,
+                obj_id,
+                cls.ui_name,
+                bg_color=BACKGROUNDS[0],
+            )
+            update_summary(cls.ui_name, len(image_byte_array), width, height)
+            htmpy.window.document.getElementById("main_page").style.display = "block"
+            htmpy.window.document.getElementById("add_page").style.display = "none"
+
+        take_pic_btn = htmpy.window.document.getElementsByClassName("take-pic")
+        take_pic_btn.addEventListener("click", take_pic)
+
+    </script>
+</body>
+</html>

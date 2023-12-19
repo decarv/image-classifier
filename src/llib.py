@@ -322,21 +322,15 @@ def get_bounding_box(image):
     return (x-2, y-2, w+4, h+4)
 
 def draw_bounding_box(image):
-    # Threshold the image to get the white region
     _, thresh = cv2.threshold(image, 250, 255, cv2.THRESH_BINARY)
 
-    # Find contours
     contours, _ = cv2.findContours(thresh, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
 
-    # Assume the largest contour is the region of interest
     largest_contour = max(contours, key=cv2.contourArea)
-
-    # Draw the bounding box around the largest contour in red color (RGB format for display)
     x, y, w, h = cv2.boundingRect(largest_contour)
-    color_image = cv2.cvtColor(image, cv2.COLOR_GRAY2RGB)  # Convert to RGB
+    color_image = cv2.cvtColor(image, cv2.COLOR_GRAY2RGB)
     bounding_box_image = cv2.rectangle(color_image, (x - 2, y - 2), (x + w + 2, y + h + 2), (255, 0, 0), 2)
 
-    # Extract the region within the bounding box
     extracted_region = image[y - 2:y + h + 2, x - 2:x + w + 2]
 
     return bounding_box_image, extracted_region
@@ -381,19 +375,13 @@ def create_segmentation_mask(image, filter_diameter, sigma_color, sigma_space, k
     if len(image.shape) == 3 and image.shape[2] == 1:
         image = image.reshape(1290, -1)
 
-    # Use a bilateral filter for noise reduction with adjustable parameters
     blur = cv2.bilateralFilter(image, filter_diameter, sigma_color, sigma_space)
 
-    # Apply Otsu's thresholding
     _, binary_mask = cv2.threshold(blur, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
 
-    # Apply Canny edge detection to help in finding contours
-    edges = cv2.Canny(blur, 100, 200)
-
-    # Morphological opening to remove small objects with adjustable parameters
     kernel = np.ones((kernel_size, kernel_size), np.uint8)
     opening = cv2.morphologyEx(binary_mask, cv2.MORPH_OPEN, kernel, iterations=iterations)
-    # Find the largest contour
+
     contours, _ = cv2.findContours(opening, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
     if not contours:
         return np.zeros_like(binary_mask)
@@ -425,30 +413,28 @@ def create_ground_truth_grid(dataset, filter_diameters, sigma_colors, sigma_spac
 
 
 def extract_features(binary_image):
-    # Ensure the input image is binary
     assert isinstance(binary_image, np.ndarray)
 
     _, thresh = cv2.threshold(binary_image, 128, 255, cv2.THRESH_BINARY)
 
-    # Find contours and properties
     contours, _ = cv2.findContours(thresh, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
     if not contours:
         return None
     largest_contour = max(contours, key=cv2.contourArea)
 
-    # Calculate area
+    # Área
     area = cv2.contourArea(largest_contour)
 
-    # Calculate perimeter
+    # Perímetro
     perimeter = cv2.arcLength(largest_contour, True)
 
-    # Calculate the bounding rectangle
+    # Bounding Rect
     x, y, w, h = cv2.boundingRect(largest_contour)
     aspect_ratio = float(w) / h
     rect_area = w * h
     extent = float(area) / rect_area
 
-    # Create a convex hull for the largest contour
+    # Convex Hull
     try:
         hull = cv2.convexHull(largest_contour)
         hull_area = cv2.contourArea(hull)
@@ -456,10 +442,10 @@ def extract_features(binary_image):
     except ZeroDivisionError:
         solidity = 0
 
-    # Equivalent Diameter
+    # Diâmetro
     equivalent_diameter = np.sqrt(4 * area / np.pi)
 
-    # Orientation, Eccentricity, and other moments-based properties
+    # Orientação e Excentricidade
     moments = cv2.moments(largest_contour)
     if moments['mu20'] + moments['mu02'] != 0:
         eccentricity = np.sqrt(2 * (moments['mu20'] - moments['mu02']) ** 2 + 4 * moments['mu11'] ** 2) / (
@@ -469,7 +455,7 @@ def extract_features(binary_image):
         eccentricity = 0
         orientation = 0
 
-    # Compactness
+    # Compactação
     if area != 0:
         compactness = (perimeter ** 2) / area
     else:
@@ -490,6 +476,64 @@ def extract_features(binary_image):
     return features
 
 
+def eval_classifiers(dfs: list[dict[str, list | pd.DataFrame]]) -> list[dict]:
+    scores = []
+    for data in dfs:
+        params = data['params']
+        df = data['df']
+        scores_dict = {'params': params, 'best': {}, 'classifiers': {}, 'scores': []}
+
+        le = LabelEncoder()
+        df['class'] = le.fit_transform(df['class'])
+
+        X = df.drop('class', axis=1)
+        y = df['class']
+
+        selector = SelectKBest(score_func=mutual_info_classif, k='all')
+        X_new = selector.fit_transform(X, y)
+        X_train, X_test, y_train, y_test = train_test_split(X_new, y, test_size=0.3, random_state=42)
+
+        classifiers = {
+            'KNN': KNeighborsClassifier(),
+            'SVM': SVC(),
+            'RandomForest': RandomForestClassifier(),
+            'DecisionTree': DecisionTreeClassifier(),
+            'LogisticRegression': LogisticRegression()
+        }
+
+        best_name: str = ""
+        best_accuracy: float = 0.0
+        for name, clf in classifiers.items():
+            scores_dict['classifiers'][name] = {}
+            clf.fit(X_train, y_train)
+            try:
+                y_pred = clf.predict(X_test)
+                scores_dict['classifiers'][name]['acc'] = accuracy_score(y_test, y_pred)
+                scores_dict['classifiers'][name]['report'] = classification_report(y_test, y_pred)
+            except ValueError:
+                scores_dict['classifiers'][name]['acc'] = 0.0
+                scores_dict['classifiers'][name]['report'] = 0.0
+
+            if best_accuracy < scores_dict['classifiers'][name]['acc']:
+                best_accuracy = scores_dict['classifiers'][name]['acc']
+                best_name = name
+
+        scores_dict['scores'] = selector.scores_
+        scores_dict['best'] = {'name': best_name, 'acc': best_accuracy, 'params': params}
+        scores.append(scores_dict)
+    return scores
+
+def create_feature_dataframe(df: pd.DataFrame) -> pd.DataFrame:
+    features = []
+    for index, row in df.iterrows():
+        f = extract_features(row['image'])
+        if f is None:
+            continue
+        features.append(f)
+        features[-1]['class'] = row['class']
+    return pd.DataFrame(features)
+
+
 def store_best_random_forest(dfs: list[dict[str, list | pd.DataFrame]], save_path) -> list[dict]:
     scores = []
     best_overall_classifier = None
@@ -508,18 +552,14 @@ def store_best_random_forest(dfs: list[dict[str, list | pd.DataFrame]], save_pat
         X = df.drop('class', axis=1)
         y = df['class']
 
-        # Train RandomForest Classifier and select features
         forest = RandomForestClassifier(n_estimators=100)
         forest.fit(X, y)
 
-        # Use SelectFromModel for feature selection
         sfm = SelectFromModel(forest, threshold=0.01)
         X_transformed = sfm.fit_transform(X, y)
 
-        # Split the data
-        X_train, X_test, y_train, y_test = train_test_split(X_transformed, y, test_size=0.3, random_state=42)
+        X_train, X_test, y_train, y_test = train_test_split(X_transformed, y, test_size=0.3)
 
-        # Evaluate RandomForest Classifier
         forest.fit(X_train, y_train)
         y_pred = forest.predict(X_test)
         accuracy = accuracy_score(y_test, y_pred)
@@ -532,7 +572,6 @@ def store_best_random_forest(dfs: list[dict[str, list | pd.DataFrame]], save_pat
             'feature_importances': feature_importances
         }
 
-        # Update best classifier if necessary
         if accuracy > highest_accuracy:
             highest_accuracy = accuracy
             best_overall_classifier = forest
@@ -552,13 +591,3 @@ def store_best_random_forest(dfs: list[dict[str, list | pd.DataFrame]], save_pat
     }
 
     return scores, best_classifier_info
-
-def create_feature_dataframe(df: pd.DataFrame) -> pd.DataFrame:
-    features = []
-    for index, row in df.iterrows():
-        f = extract_features(row['image'])
-        if f is None:
-            continue
-        features.append(f)
-        features[-1]['class'] = row['class']
-    return pd.DataFrame(features)
